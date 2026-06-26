@@ -422,10 +422,26 @@ class Builder:
                 self.pagebreak()
 
     def save(self, hwpx, pdf=None):
-        for path in [p for p in (hwpx, pdf) if p]:
+        """HWPX 저장 시도 → 실패(구버전 한글 등) 시 .hwp 로 폴백.
+        반환: (성공여부, 최종경로, 포맷, pdf성공여부)."""
+        hwp_path = os.path.splitext(hwpx)[0] + ".hwp"
+        for path in [p for p in (hwpx, hwp_path, pdf) if p]:
             if os.path.exists(path):
-                os.remove(path)
-        self.hwp.SaveAs(hwpx, "HWPX", "")
+                try: os.remove(path)
+                except Exception: pass
+        final_path, fmt, ok = hwpx, "HWPX", False
+        try:
+            self.hwp.SaveAs(hwpx, "HWPX", "")
+            ok = os.path.exists(hwpx)
+        except Exception as e:
+            print("HWPX 저장 실패 → HWP 폴백:", e)
+        if not ok:   # 구버전 한글: .hwp 로 저장
+            try:
+                self.hwp.SaveAs(hwp_path, "HWP", "")
+                if os.path.exists(hwp_path):
+                    ok, final_path, fmt = True, hwp_path, "HWP"
+            except Exception as e:
+                print("HWP 저장도 실패:", e)
         ok_pdf = False
         if pdf:
             try:
@@ -436,7 +452,7 @@ class Builder:
         for t in self.tmpfiles:
             try: os.remove(t)
             except Exception: pass
-        return os.path.exists(hwpx), ok_pdf
+        return ok, final_path, fmt, ok_pdf
 
 
 def main():
@@ -477,9 +493,11 @@ def main():
     print(f"  총 블록 {sum(len(b) for b in sb)}개")
     b = Builder()
     b.build(sb)
-    ok, okpdf = b.save(out_hwpx, out_pdf)
+    ok, final_path, fmt, okpdf = b.save(out_hwpx, out_pdf)
     print("─" * 50)
-    print("HWPX 생성:", "성공" if ok else "실패", "→", out_hwpx)
+    print(f"{fmt} 생성:", "성공" if ok else "실패", "→", final_path)
+    if fmt == "HWP":
+        print("  (이 PC 한글이 HWPX 저장을 지원하지 않아 .hwp로 저장함 — 모든 한글 버전 호환)")
     if out_pdf:
         print("PDF  생성:", "성공" if okpdf else "실패", "→", out_pdf)
     print("완료.")
